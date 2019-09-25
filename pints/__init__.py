@@ -209,6 +209,16 @@ from ._mcmc._slice_doubling import SliceDoublingMCMC
 
 
 #
+# SMC
+#
+from ._sequential import (
+    SMCController,
+    SMCSampler,
+)
+from ._sequential._SMC import SMC
+
+
+#
 # Nested samplers
 #
 from ._nested import NestedSampler

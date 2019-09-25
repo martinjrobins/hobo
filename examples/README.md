@@ -55,6 +55,10 @@ relevant code.
 ### Nested sampling
 - [Ellipsoidal nested rejection sampling](./sampling-ellipsoidal-nested-rejection-sampling.ipynb)
 
+### Sequential Monte Carlo sampling
+- [Sequential Monte Carlo sampling](sampling-sequential-monte-carlo-1.ipynb)
+- [Sequential Monte Carlo sampling, pt 2](sampling-sequential-monte-carlo-2.ipynb)
+
 ### Analysing sampling results
 - [Autocorrelation](./plot-mcmc-autocorrelation.ipynb)
 - [Effective sample size](./sampling-effective-sample-size.ipynb)

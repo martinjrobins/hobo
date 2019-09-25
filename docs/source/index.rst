@@ -37,6 +37,7 @@ Contents
     nested_samplers/index
     noise_generators
     optimisers/index
+    sequential_samplers/index
     toy/index
     utilities
 
@@ -71,9 +72,10 @@ Sampling
    - :class:`NestedRejectionSampler`, requires a :class:`LogPDF` and a
      :class:`LogPrior` that can be sampled from.
 
-#. Particle based samplers
+#. Sequential samplers
 
-   - SMC
+   - :class:`SMC`, requires a :class:`LogPDF` and a :class:`LogPrior` that can
+     be sampled from.
 
 #. Likelihood free sampling (Need distance between data and states, e.g. least squares?)
 
@@ -99,7 +101,7 @@ Optimisation
 All methods shown here are derivative-free methods that work on any
 :class:`ErrorMeasure` or :class:`LogPDF`.
 
-1. Particle-based methods
+#. Particle-based methods
 
    - Evolution strategies (global/local methods)
 

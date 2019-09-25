@@ -218,7 +218,8 @@ class AdaptiveCovarianceMCMC(pints.SingleChainMCMC):
         # Store
         self._current = current
         self._current_log_pdf = current_log_pdf
-        self._proposed = proposed
+        if proposed is not None:
+            self._proposed = proposed
 
     def set_target_acceptance_rate(self, rate=0.234):
         """
