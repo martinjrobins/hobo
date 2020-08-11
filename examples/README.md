@@ -57,6 +57,7 @@ relevant code.
 - [Haario Adaptive Covariance MCMC](./sampling/adaptive-covariance-haario.ipynb)
 - [Haario-Bardenet Adaptive Covariance MCMC](./sampling/adaptive-covariance-haario-bardenet.ipynb)
 - [Metropolis Random Walk MCMC](./sampling/metropolis-mcmc.ipynb)
+- [Neal Langevin MCMC](./sampling/neal-langevin-mcmc.ipynb)
 - [Population MCMC](./sampling/population-mcmc.ipynb)
 - [Rao-Blackwell Adaptive Covariance MCMC](./sampling/adaptive-covariance-rao-blackwell.ipynb)
 - [Slice Sampling: Doubling MCMC](./sampling/slice-doubling-mcmc.ipynb)

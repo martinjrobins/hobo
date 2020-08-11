@@ -24,6 +24,7 @@ interface, that can be used to sample from an unknown
     mala_mcmc
     metropolis_mcmc
     monomial_gamma_hamiltonian_mcmc
+    neal_langevin_mcmc
     population_mcmc
     rao_blackwell_ac_mcmc
     relativistic_mcmc

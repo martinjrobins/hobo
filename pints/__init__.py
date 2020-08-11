@@ -214,6 +214,7 @@ from ._mcmc._hamiltonian import HamiltonianMCMC
 from ._mcmc._mala import MALAMCMC
 from ._mcmc._metropolis import MetropolisRandomWalkMCMC
 from ._mcmc._monomial_gamma_hamiltonian import MonomialGammaHamiltonianMCMC
+from ._mcmc._neal_langevin import NealLangevinMCMC
 from ._mcmc._population import PopulationMCMC
 from ._mcmc._rao_blackwell_ac import RaoBlackwellACMC
 from ._mcmc._relativistic import RelativisticMCMC

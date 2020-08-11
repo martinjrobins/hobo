@@ -87,6 +87,8 @@ Sampling
      on any :class:`LogPDF` that provides 1st order sensitivities.
    - :class:`Hamiltonian Monte Carlo<HamiltonianMCMC>`, works on any
      :class:`LogPDF` that provides 1st order sensitivities.
+   - :class:`Neal Langenvin Monte Carlo<NealLangevinMCMC>`, works on any
+     :class:`LogPDF` that provides 1st order sensitivities.
    - NUTS
 
 #. Differential geometric methods (Need Hessian of :class:`LogPDF`)
