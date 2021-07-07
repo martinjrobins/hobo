@@ -56,7 +56,7 @@ class NestedRejectionSampler(pints.NestedSampler):
 
         Z = Z + (1 / n_active_points) * (L_1 + L_2 + ..., + L_n_active_points)
 
-    The posterior samples are generated as described in [1] on page 849 by
+    The posterior samples are generated as described in [1]_ on page 849 by
     weighting each dropped sample in proportion to the volume of the
     posterior region it was sampled from. That is, the probability
     for drawing a given sample j is given by::

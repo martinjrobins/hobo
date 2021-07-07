@@ -241,6 +241,7 @@ from ._nested import NestedSampler
 from ._nested import NestedController
 from ._nested._rejection import NestedRejectionSampler
 from ._nested._ellipsoid import NestedEllipsoidSampler
+from ._nested._multinest import MultiNestSampler
 
 
 #

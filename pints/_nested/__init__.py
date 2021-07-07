@@ -9,6 +9,7 @@ from __future__ import absolute_import, division
 from __future__ import print_function, unicode_literals
 import pints
 import numpy as np
+import scipy.special
 
 try:
     from scipy.special import logsumexp
@@ -48,6 +49,10 @@ class NestedSampler(pints.TunableMethod):
         self._min_index = None
         self._accept_count = 0
         self._n_evals = 0
+
+        # multiple ellipsoid indicator
+        self._multiple_ellipsoids = False
+        self._ellipsoid_count = 0
 
     def active_points(self):
         """
@@ -414,6 +419,8 @@ class NestedController(object):
             self._logger.add_time('Time m:s')
             self._logger.add_float('Delta_log(z)')
             self._logger.add_float('Acceptance rate')
+            if self._sampler._multiple_ellipsoids:
+                self._logger.add_float('Ellipsoid count')
 
     def _initial_points(self):
         """
@@ -429,8 +436,12 @@ class NestedController(object):
             # Show progress
             if self._logging and i >= self._next_message:
                 # Log state
-                self._logger.log(0, self._sampler._n_evals,
-                                 self._timer.time(), self._diff, 1.0)
+                if not self._sampler._multiple_ellipsoids:
+                    self._logger.log(0, self._sampler._n_evals,
+                                     self._timer.time(), self._diff, 1.0)
+                else:
+                    self._logger.log(0, self._sampler._n_evals,
+                                     self._timer.time(), self._diff, 1.0, 0.0)
 
                 # Choose next logging point
                 if i > self._message_warm_up:
@@ -667,6 +678,10 @@ class NestedController(object):
 
         return self._m_posterior_samples
 
+    def sampler(self):
+        """ Returns the underlying :class:`NestedSampler` object. """
+        return self._sampler
+
     def sample_from_posterior(self, posterior_samples):
         """
         Draws posterior samples based on nested sampling run using importance
@@ -780,13 +795,188 @@ class NestedController(object):
             self._i_message += 1
             if self._i_message >= self._next_message:
                 # Log state
-                self._logger.log(self._i_message, self._sampler._n_evals,
-                                 self._timer.time(), self._diff,
-                                 float(self._sampler._accept_count /
-                                       (self._sampler._n_evals -
-                                        self._sampler._n_active_points)))
+                if not self._sampler._multiple_ellipsoids:
+                    self._logger.log(self._i_message, self._sampler._n_evals,
+                                     self._timer.time(), self._diff,
+                                     float(self._sampler._accept_count /
+                                           (self._sampler._n_evals -
+                                            self._sampler._n_active_points)))
+                else:
+                    self._logger.log(self._i_message, self._sampler._n_evals,
+                                     self._timer.time(), self._diff,
+                                     float(self._sampler._accept_count /
+                                           (self._sampler._n_evals -
+                                            self._sampler._n_active_points)),
+                                     self._sampler._ellipsoid_count)
 
                 # Choose next logging point
                 if self._i_message > self._message_warm_up:
                     self._next_message = self._message_interval * (
                         1 + self._i_message // self._message_interval)
+
+
+class Ellipsoid():
+    """
+    A class to represent N dimensional ellipsoids, which are needed by both
+    ellipsoidal nested sampling and MultiNest.
+
+    In "center form" the equation of an ellipsoid is given by:
+
+    ``(x-c).T * A * (x-c) = 1``
+
+    where ``A`` is a NxN dimensional positive definite symmetric matrix and
+    ``c`` is a N dimensional vector indicating the center of the ellipsoid.
+
+    Parameters
+    ----------
+    A : NxN dimensional positive definite symmetric matrix
+        represents the orientation and size of ellipsoid
+    c : N dimensional vector
+        center of ellipsoid
+    """
+    def __init__(self, A, c):
+
+        self._c = c
+        self._n_parameters = len(c)
+
+        if A.shape != (self._n_parameters, self._n_parameters):
+            raise ValueError(
+                'Sigma must have same dimension as mean, or be a square ' +
+                'matrix with the same dimension as the center.')
+        self._A = np.copy(A)
+
+        # calculate useful quantities
+        self._A_inv = np.linalg.inv(A)
+        # don't calculate volume unless needed
+        self._volume = None
+
+        # don't cache points unless constructed using minimum_volume_ellipsoid
+        self._points = None
+        self._n_points = 0
+
+    def set_points(self, points):
+        """ Sets points contained within bounding ellipsoid. """
+        self._points = points
+        self._n_points = len(points)
+
+    def centroid(self):
+        """ Returns centroid of ellipsoid. """
+        return self._c
+
+    def enlarge(self, enlargement_factor):
+        """ Enlarges ellipsoid by a factor. """
+        self._A *= (1 / enlargement_factor)
+        self._A_inv *= enlargement_factor
+        self._volume = None
+
+    @staticmethod
+    def mahalanobis_distance(point, A, c):
+        """
+        Finds Mahalanobis distance between a point and the centroid of
+        of an ellipsoid.
+        """
+        return np.matmul(np.matmul(point - c, A), point - c)
+
+    @classmethod
+    def minimum_volume_ellipsoid(cls, points):
+        """
+        Creates an approximate minimum bounding ellipsoid in "center form":
+        ``(x-c).T * A * (x-c) = 1``.
+        """
+        cov = np.cov(np.transpose(points))
+        cov_inv = np.linalg.inv(cov)
+        c = np.mean(points, axis=0)
+        dist = np.zeros(len(points))
+        for i in range(len(points)):
+            dist[i] = Ellipsoid.mahalanobis_distance(points[i], cov_inv, c)
+        enlargement_factor = np.max(dist)
+        A = (1.0 / enlargement_factor) * cov_inv
+        obj = cls(A, c)
+        obj.set_points(points)
+        return obj
+
+    def n_points(self):
+        """ Returns number of points within bounding ellipsoid. """
+        return self._n_points
+
+    def points(self):
+        """ Returns points within bounding ellipsoid. """
+        return self._points
+
+    def sample(self, npts, enlargement_factor=1):
+        """
+        Draws ``npts`` random uniform points from within the ellipsoid.
+
+        Most of this functionality has been borrowed from:
+        http://www.astro.gla.ac.uk/~matthew/blog/?p=368
+        """
+        ndims = self._n_parameters
+        covmat = self._A_inv * enlargement_factor
+        cent = self._c
+
+        # calculate eigen_values (e) and eigen_vectors (v)
+        eigen_values, eigen_vectors = np.linalg.eig(covmat)
+        idx = (-eigen_values).argsort()[::-1][:ndims]
+        e = eigen_values[idx]
+        v = eigen_vectors[:, idx]
+        e = np.diag(e)
+
+        # generate radii of hyperspheres
+        rs = np.random.uniform(0, 1, npts)
+
+        # generate points
+        pt = np.random.normal(0, 1, [npts, ndims])
+
+        # get scalings for each point onto the surface of a unit
+        # hypersphere
+        fac = np.sum(pt**2, axis=1)
+
+        # calculate scaling for each point to be within the unit
+        # hypersphere with radii rs
+        fac = (rs**(1 / ndims)) / np.sqrt(fac)
+        pnts = np.zeros((npts, ndims))
+
+        # scale points to the ellipsoid using the eigen_values and rotate
+        # with the eigen_vectors and add centroid
+        d = np.sqrt(np.diag(e))
+        d.shape = (ndims, 1)
+
+        for i in range(0, npts):
+            # scale points to a uniform distribution within unit
+            # hypersphere
+            pnts[i, :] = fac[i] * pt[i, :]
+            pnts[i, :] = np.dot(
+                np.multiply(pnts[i, :], np.transpose(d)),
+                np.transpose(v)
+            ) + cent
+
+        if npts > 1:
+            return pnts
+        else:
+            return pnts[0]
+
+    def volume(self):
+        """
+        Calculates volume of ellipsoid.
+        See: https://math.stackexchange.com/questions/2751632/solve-for-volume-of-ellipsoid-mathbb-x-mathbf-mut-sigma-1-mathbb-x # noqa
+        """
+        if self._volume is None:
+            d = self._n_parameters
+            r = np.linalg.det(self._A_inv)
+            vol = (
+                (np.pi**(d / 2.0) / scipy.special.gamma((d / 2.0) + 1.0))
+                * np.sqrt(r)
+            )
+            # cache volume calculation to avoid recomputation
+            self._volume = vol
+        return self._volume
+
+    def weight_matrix(self):
+        """ Returns weight matrix. """
+        return self._A
+
+    def within_ellipsoid(self, point):
+        """ Determines if point is within ellipsoid. """
+        return Ellipsoid.mahalanobis_distance(point,
+                                              self.weight_matrix(),
+                                              self.centroid()) <= 1

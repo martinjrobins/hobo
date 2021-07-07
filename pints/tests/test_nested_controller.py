@@ -12,6 +12,7 @@ import numpy as np
 
 import pints
 import pints.toy
+from pints._nested.__init__ import Ellipsoid
 
 from shared import StreamCapture, TemporaryDirectory
 
@@ -194,6 +195,27 @@ class TestNestedController(unittest.TestCase):
         for line in lines[5:]:
             self.assertTrue(pattern.match(line))
 
+    def test_logging_multiple_ellipsoid(self):
+        # Tests logging to screen and file.
+
+        # Log to screen
+        with StreamCapture() as c:
+            sampler = pints.NestedController(
+                self.log_likelihood, self.log_prior,
+                method=pints.MultiNestSampler)
+            sampler.set_n_posterior_samples(2)
+            sampler.set_iterations(20)
+            sampler.set_log_to_screen(True)
+            sampler.set_log_to_file(False)
+            samples, margin = sampler.run()
+        lines = c.text().splitlines()
+        self.assertEqual(lines[0], 'Running MultiNest sampler')
+        self.assertEqual(lines[1], 'Number of active points: 400')
+        self.assertEqual(lines[2], 'Total number of iterations: 20')
+        self.assertEqual(lines[3], 'Total number of posterior samples: 2')
+        self.assertEqual(lines[4], ('Iter. Eval. Time m:s Delta_log(z) ' +
+                                    'Acceptance rate Ellipsoid count'))
+
     def test_settings_check(self):
         # Tests the settings check at the start of a run.
         sampler = pints.NestedController(
@@ -342,6 +364,155 @@ class TestNestedController(unittest.TestCase):
         with self.assertRaisesRegex(
                 RuntimeError, 'Controller is valid for single use only'):
             sampler.run()
+
+
+class TestEllipsoid(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        """ Prepare for the test. """
+        cls.A = np.array([[1, 0.5], [0.5, 2]])
+        cls.c = np.array([3, 4])
+
+    def test_constructors(self):
+        # tests instantiation and errors
+
+        # basic construction
+        ellipsoid = Ellipsoid(self.A, self.c)
+        self.assertTrue(np.array_equal(self.A, ellipsoid.weight_matrix()))
+        self.assertTrue(np.array_equal(self.c, ellipsoid.centroid()))
+        self.assertTrue(ellipsoid.points() is None)
+        self.assertEqual(0, ellipsoid.n_points())
+
+        # errors
+        # different length vec
+        A = np.array([[1, 0.5], [0.5, 2]])
+        c = [1, 2, 3]
+        self.assertRaises(ValueError, Ellipsoid, A, c)
+
+        A = np.array([[1, 0.5], [0.5, 2, 3]])
+        c = [1, 2]
+        self.assertRaises(ValueError, Ellipsoid, A, c)
+
+    def test_enlarge_ellipsoid(self):
+        # tests that ellipsoid is properly enlarged
+
+        ellipsoid = Ellipsoid(self.A, self.c)
+        vol1 = ellipsoid.volume()
+        ef = 2
+        ellipsoid.enlarge(ef)
+        vol2 = ellipsoid.volume()
+        self.assertEqual(vol1 * ef, vol2)
+
+    def test_volume(self):
+        # tests volume calculation
+        ellipsoid = Ellipsoid(self.A, self.c)
+        self.assertAlmostEqual(ellipsoid.volume(), 2.3748208234474517)
+
+        A = np.array([[1, 0.5, 0.0], [0.5, 2, 0.0], [0.0, 0.0, 3.0]])
+        ellipsoid = Ellipsoid(A, [1, 2, 3])
+        self.assertAlmostEqual(ellipsoid.volume(), 1.828137922259353)
+
+    def test_mahalanobis_distance(self):
+        # tests that distance utility works
+        A = np.array([[1, 0], [0, 1]])
+        c = np.array([0, 0])
+        self.assertEqual(Ellipsoid.mahalanobis_distance([1, 0], A, c), 1)
+        self.assertEqual(Ellipsoid.mahalanobis_distance([0, 1], A, c), 1)
+        point = [1 / np.sqrt(2), 1 / np.sqrt(2)]
+        self.assertAlmostEqual(Ellipsoid.mahalanobis_distance(point, A, c), 1)
+
+    def test_sample(self):
+        # tests uniform sampling within ellipsoid
+
+        # single draws
+        ellipsoid = Ellipsoid(self.A, self.c)
+        draws = ellipsoid.sample(1)
+        self.assertTrue(len(draws), 1)
+
+        # default ellipsoid sampling
+        n = 1000
+        draws = ellipsoid.sample(n)
+        for draw in draws:
+            self.assertTrue(len(draw) == len(self.c))
+            dist = Ellipsoid.mahalanobis_distance(draw, self.A, self.c)
+            self.assertTrue(dist <= 1)
+
+        A = np.array([[1, 0.5, 0.0], [0.5, 2, 0.0], [0.0, 0.0, 3.0]])
+        c = [1, 2, 3]
+        ellipsoid = Ellipsoid(A, c)
+        draws = ellipsoid.sample(n)
+        for draw in draws:
+            self.assertTrue(len(draw) == len(c))
+            dist = Ellipsoid.mahalanobis_distance(draw, A, c)
+            self.assertTrue(dist <= 1)
+
+        # expanded ellipsoid sampling
+        n = 10000
+        ef = 2
+        draws = ellipsoid.sample(n, enlargement_factor=ef)
+        dists = np.zeros(n)
+        for k, draw in enumerate(draws):
+            self.assertTrue(len(draw) == len(c))
+            dist = Ellipsoid.mahalanobis_distance(draw, A, c)
+            dists[k] = dist
+            self.assertTrue(dist <= ef)
+        self.assertTrue(max(dists) > 1)
+        ef1 = 4
+        draws = ellipsoid.sample(n, enlargement_factor=ef1)
+        dists1 = np.zeros(n)
+        for k, draw in enumerate(draws):
+            self.assertTrue(len(draw) == len(c))
+            dist = Ellipsoid.mahalanobis_distance(draw, A, c)
+            dists1[k] = dist
+            self.assertTrue(dist <= ef1)
+        self.assertTrue(max(dists1) > max(dists))
+
+    def test_minimum_volume_ellipsoid(self):
+        # tests bounding ellipsoid creation
+
+        n = 10000
+        # 2D example
+        gaussian = pints.toy.GaussianLogPDF()
+        draws = gaussian.sample(n)
+        ellipsoid = Ellipsoid.minimum_volume_ellipsoid(draws)
+
+        # checks that points are held by bounding ellipsoid
+        self.assertTrue(np.array_equal(draws, ellipsoid.points()))
+        self.assertEqual(n, ellipsoid.n_points())
+
+        dists = np.zeros(n)
+        for k, draw in enumerate(draws):
+            dist = Ellipsoid.mahalanobis_distance(draw,
+                                                  ellipsoid.weight_matrix(),
+                                                  ellipsoid.centroid())
+            dists[k] = dist
+        self.assertTrue(max(dists) <= 1.1)
+        self.assertTrue(max(dists) > 0.9)
+
+        # 3D
+        sigma = np.array([[1, 0.5, 0.0], [0.5, 2, 0.0], [0.0, 0.0, 3.0]])
+        gaussian = pints.toy.GaussianLogPDF(mean=[1, 2, 3], sigma=sigma)
+        draws = gaussian.sample(n)
+        ellipsoid = Ellipsoid.minimum_volume_ellipsoid(draws)
+        self.assertTrue(np.array_equal(draws, ellipsoid.points()))
+        self.assertEqual(n, ellipsoid.n_points())
+        dists = np.zeros(n)
+        for k, draw in enumerate(draws):
+            dist = Ellipsoid.mahalanobis_distance(draw,
+                                                  ellipsoid.weight_matrix(),
+                                                  ellipsoid.centroid())
+            dists[k] = dist
+        self.assertTrue(max(dists) <= 1.1)
+        self.assertTrue(max(dists) > 0.9)
+
+    def test_within_ellipsoid(self):
+        # tests within_ellipsoid function
+        A = np.array([[1, 0], [0, 1]])
+        c = np.array([0, 0])
+        ellipsoid = Ellipsoid(A, c)
+        self.assertTrue(ellipsoid.within_ellipsoid(np.array([1, 0])))
+        self.assertFalse(ellipsoid.within_ellipsoid(np.array([1.01, 0])))
 
 
 if __name__ == '__main__':

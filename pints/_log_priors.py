@@ -877,7 +877,7 @@ class MultivariateGaussianLogPrior(pints.LogPrior):
             u_2 = \int_{-\infty}^{\theta_2} \pi_2(\theta_2|\theta_1)d\theta_2
 
         So that we return a vector of cdfs (u_1,u_2,...,u_d).
-        Note that, this function is mainly to facilitate Multinest sampling
+        Note that, this function is mainly to facilitate MultiNest sampling
         since the distribution (u_1,u_2,...,u_d) is uniform within the unit
         cube.
         """
@@ -934,7 +934,7 @@ class MultivariateGaussianLogPrior(pints.LogPrior):
             u_2 = \int_{-\infty}^{\theta_2} \pi_2(\theta_2|\theta_1)d\theta_2
 
         So that we return a vector of icdfs (theta_1,theta_2,...,theta_d)
-        Note that, this function is mainly to facilitate Multinest sampling
+        Note that, this function is mainly to facilitate MultiNest sampling
         since the distribution (u_1,u_2,...,u_d) is uniform within the unit
         cube.
         """

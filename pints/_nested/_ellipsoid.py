@@ -10,6 +10,7 @@ from __future__ import absolute_import, division
 from __future__ import print_function, unicode_literals
 import pints
 import numpy as np
+from pints._nested.__init__ import Ellipsoid
 
 
 class NestedEllipsoidSampler(pints.NestedSampler):
@@ -69,12 +70,18 @@ class NestedEllipsoidSampler(pints.NestedSampler):
                 )
             endif
         endif
+        L_min = min(L)
+        indexmin = min_index(L)
         theta* = ellipsoid_sample(enlargement_factor, A, c)
         while p(theta*|X) < L_min:
             theta* = ellipsoid_sample(enlargement_factor, A, c)
         endwhile
+        X_t = exp(-t / n_active_points)
+        w_t = X_t - X_t-1
+        Z = Z + L_min * w_t
         theta_indexmin = theta*
         L_indexmin = p(theta*|X)
+
 
     If the parameter ``dynamic_enlargement_factor`` is true, the enlargement
     factor is shrunk as the sampler runs, to avoid inefficiencies in later
@@ -88,7 +95,7 @@ class NestedEllipsoidSampler(pints.NestedSampler):
 
         Z = Z + (1 / n_active_points) * (L_1 + L_2 + ..., + L_n_active_points)
 
-    The posterior samples are generated as described in [2] on page 849 by
+    The posterior samples are generated as described in [2]_ on page 849 by
     weighting each dropped sample in proportion to the volume of the
     posterior region it was sampled from. That is, the probability
     for drawing a given sample j is given by::
@@ -105,6 +112,9 @@ class NestedEllipsoidSampler(pints.NestedSampler):
            Pia Mukherjee, David Parkinson, Andrew R. Liddle, 2008.
            arXiv: arXiv:astro-ph/0508461v2 11 Jan 2006
            https://doi.org/10.1086/501068
+    .. [2] "Nested Sampling for General Bayesian Computation", John Skilling,
+           Bayesian Analysis 1:4 (2006).
+           https://doi.org/10.1214/06-BA127
     """
 
     def __init__(self, log_prior):
@@ -128,8 +138,11 @@ class NestedEllipsoidSampler(pints.NestedSampler):
         # Dynamically vary the enlargement factor
         self._dynamic_enlargement_factor = False
         self._alpha = 0.2
-        self._A = None
-        self._centroid = None
+        self._ellipsoid = None
+
+    def ellipsoid(self):
+        """ Returns ellipsoid used in sampling. """
+        return self._ellipsoid
 
     def set_dynamic_enlargement_factor(self, dynamic_enlargement_factor):
         """
@@ -199,10 +212,10 @@ class NestedEllipsoidSampler(pints.NestedSampler):
         sampling regime).
         """
         i = self._accept_count
-        if (i + 1) % self._n_rejection_samples == 0:
+        if self._rejection_phase and (i + 1) > self._n_rejection_samples:
             self._rejection_phase = False
             # determine bounding ellipsoid
-            self._A, self._centroid = self._minimum_volume_ellipsoid(
+            self._ellipsoid = Ellipsoid.minimum_volume_ellipsoid(
                 self._m_active[:, :self._n_parameters]
             )
 
@@ -215,7 +228,7 @@ class NestedEllipsoidSampler(pints.NestedSampler):
             # update bounding ellipsoid if sufficient samples taken
             if ((i + 1 - self._n_rejection_samples)
                     % self._ellipsoid_update_gap == 0):
-                self._A, self._centroid = self._minimum_volume_ellipsoid(
+                self._ellipsoid = Ellipsoid.minimum_volume_ellipsoid(
                     self._m_active[:, :self._n_parameters])
             # From Feroz-Hobson (2008) below eq. (14)
             if self._dynamic_enlargement_factor:
@@ -225,8 +238,8 @@ class NestedEllipsoidSampler(pints.NestedSampler):
                 )
                 self._enlargement_factor = 1 + f
             # propose by sampling within ellipsoid
-            self._proposed = self._ellipsoid_sample(
-                self._enlargement_factor, self._A, self._centroid, n_points)
+            self._proposed = self._ellipsoid.sample(
+                n_points, self._enlargement_factor)
         return self._proposed
 
     def set_enlargement_factor(self, enlargement_factor=1.1):
@@ -266,81 +279,6 @@ class NestedEllipsoidSampler(pints.NestedSampler):
         if ellipsoid_update_gap <= 1:
             raise ValueError('Ellipsoid update gap must exceed 1.')
         self._ellipsoid_update_gap = ellipsoid_update_gap
-
-    def _minimum_volume_ellipsoid(self, points, tol=0.0):
-        """
-        Finds an approximate minimum bounding ellipse in "center form":
-        ``(x-c).T * A * (x-c) = 1``.
-        """
-        cov = np.cov(np.transpose(points))
-        cov_inv = np.linalg.inv(cov)
-        c = np.mean(points, axis=0)
-        dist = np.zeros(len(points))
-        for i in range(len(points)):
-            dist[i] = np.matmul(np.matmul(points[i] - c, cov_inv),
-                                points[i] - c)
-        enlargement_factor = np.max(dist)
-        A = (1 - tol) * (1.0 / enlargement_factor) * cov_inv
-        return A, c
-
-    def _ellipsoid_sample(self, enlargement_factor, A, centroid, n_points):
-        """
-        Draws from the enlarged bounding ellipsoid.
-        """
-        if n_points > 1:
-            return self._draw_from_ellipsoid(
-                np.linalg.inv((1 / enlargement_factor) * A),
-                centroid, n_points)
-        else:
-            return self._draw_from_ellipsoid(
-                np.linalg.inv((1 / enlargement_factor) * A), centroid, 1)[0]
-
-    def _draw_from_ellipsoid(self, covmat, cent, npts):
-        """
-        Draw ``npts`` random uniform points from within an ellipsoid with a
-        covariance matrix covmat and a centroid cent, as per:
-        http://www.astro.gla.ac.uk/~matthew/blog/?p=368
-        """
-        try:
-            ndims = covmat.shape[0]
-        except IndexError:  # pragma: no cover
-            ndims = 1
-
-        # calculate eigen_values (e) and eigen_vectors (v)
-        eigen_values, eigen_vectors = np.linalg.eig(covmat)
-        idx = (-eigen_values).argsort()[::-1][:ndims]
-        e = eigen_values[idx]
-        v = eigen_vectors[:, idx]
-        e = np.diag(e)
-
-        # generate radii of hyperspheres
-        rs = np.random.uniform(0, 1, npts)
-
-        # generate points
-        pt = np.random.normal(0, 1, [npts, ndims])
-
-        # get scalings for each point onto the surface of a unit hypersphere
-        fac = np.sum(pt**2, axis=1)
-
-        # calculate scaling for each point to be within the unit hypersphere
-        # with radii rs
-        fac = (rs**(1 / ndims)) / np.sqrt(fac)
-        pnts = np.zeros((npts, ndims))
-
-        # scale points to the ellipsoid using the eigen_values and rotate with
-        # the eigen_vectors and add centroid
-        d = np.sqrt(np.diag(e))
-        d.shape = (ndims, 1)
-
-        for i in range(0, npts):
-            # scale points to a uniform distribution within unit hypersphere
-            pnts[i, :] = fac[i] * pt[i, :]
-            pnts[i, :] = np.dot(
-                np.multiply(pnts[i, :], np.transpose(d)),
-                np.transpose(v)
-            ) + cent
-
-        return pnts
 
     def name(self):
         """ See :meth:`pints.NestedSampler.name()`. """

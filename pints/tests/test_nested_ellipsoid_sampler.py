@@ -11,6 +11,7 @@ import numpy as np
 
 import pints
 import pints.toy
+from pints._nested.__init__ import Ellipsoid
 
 # Unit testing in Python 2 and 3
 try:
@@ -137,18 +138,13 @@ class TestNestedEllipsoidSampler(unittest.TestCase):
 
         # test that ellipses are estimated
         sampler = pints.NestedEllipsoidSampler(self.log_prior)
-        A1 = np.copy(sampler._A)
-        c1 = sampler._centroid
         sampler.set_n_rejection_samples(100)
         sampler.set_ellipsoid_update_gap(10)
         for i in range(5000):
             pt = sampler.ask(1)
             fx = self.log_likelihood(pt)
             sampler.tell(fx)
-        A2 = sampler._A
-        c2 = sampler._centroid
-        self.assertTrue(not np.array_equal(A1, A2))
-        self.assertTrue(not np.array_equal(c1, c2))
+        self.assertTrue(isinstance(sampler.ellipsoid(), Ellipsoid))
 
         # test multiple points being asked and tell'd
         sampler = pints.NestedEllipsoidSampler(self.log_prior)
@@ -168,11 +164,11 @@ class TestNestedEllipsoidSampler(unittest.TestCase):
         # tests dynamic enlargement factor runs
         sampler = pints.NestedController(self.log_likelihood,
                                          self.log_prior)
-        sampler._sampler.set_dynamic_enlargement_factor(1)
+        sampler.sampler().set_dynamic_enlargement_factor(1)
         sampler.set_log_to_screen(False)
-        ef1 = sampler._sampler.enlargement_factor()
+        ef1 = sampler.sampler().enlargement_factor()
         sampler.run()
-        ef2 = sampler._sampler.enlargement_factor()
+        ef2 = sampler.sampler().enlargement_factor()
         self.assertTrue(ef2 < ef1)
 
     def test_sensitivities(self):
