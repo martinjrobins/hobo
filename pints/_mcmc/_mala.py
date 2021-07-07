@@ -84,7 +84,6 @@ class MALAMCMC(pints.SingleChainMCMC):
 
         # Set initial state
         self._running = False
-        self._ready_for_tell = False
 
         # Current point and proposed point
         self._current = None
@@ -222,9 +221,8 @@ class MALAMCMC(pints.SingleChainMCMC):
         """ See :meth:`pints.SingleChainMCMC.tell()`. """
 
         # Check if we had a proposal
-        if not self._ready_for_tell:
+        if self._proposed is None:
             raise RuntimeError('Tell called before proposal was set.')
-        self._ready_for_tell = False
 
         # Unpack reply
         fx, log_gradient = reply
