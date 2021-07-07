@@ -585,6 +585,68 @@ class HalfCauchyLogPrior(pints.LogPrior):
         return np.expand_dims(a=samples, axis=1)
 
 
+class HierarchicalLogPrior(pints.LogPrior):
+        r"""
+        Defines the prior of a two-level hierarchical model, where individual means
+        are drawn from a population-level distribution with mean ``mu`` and variance ``sigma``.
+        By default, ``mu`` has a :class:`GaussianLogPrior` and ``sigma`` a :class:`HalfCauchyLogPrior`.
+        This gives the combined pdf
+
+        .. math::
+            f(\mu,\sigma|\mu_\text{mean},\mu_\text{sd},\sigma_\text{mean},\sigma_\text{sd})
+            = \frac{1}{\mu_\text{sd}\sqrt{2\pi}} \exp\left(-\frac{(\mu-\mu_\text{mean})^2}{2\;\mu_\text{sd}^2}\right)
+            \cdot \frac{\sigma_\text{sd}^2}{(\tau-\tau_\text{mean})^2 + \tau_\text{sd}^2}.
+
+        For example, to create a model with a population-level mean centred on 0,
+        and a population-level variance centred on 1, use::
+
+            p = pints.HierarchicalLogPrior([0, 1], [1, 1])
+
+        Extends :class:`LogPrior`.
+        """
+
+        def __init__(self, mu, tau):
+            # Parse input arguments
+            self._mu_mean = float(mu[0])
+            self._mu_sd = float(mu[1])
+            self._sigma_mean = float(tau[0])
+            self._sigma_sd = float(mu[1])
+
+            # Cache constants
+            self._mu_prior = pints.GaussianLogPrior(self._mu_mean, self._mu_sd)
+            self._sigma_prior = pints.HalfCauchyLogPrior(self._sigma_mean, self._sigma_sd)
+
+        def __call__(self, mu, sigma):
+            return self._mu_prior(mu) + self._sigma_prior(sigma)
+
+        def cdf(self, x):
+            """ See :meth:`LogPrior.cdf()`. """
+            return self._mu_prior.cdf(x) * self._sigma_prior.cdf(x)
+
+        def evaluateS1(self, x):
+            """ See :meth:`LogPDF.evaluateS1()`. """
+            _mu_S1 = self._mu_prior.evaluateS1(x)
+            _sigma_S1 = self._sigma_prior.evaluateS1(x)
+            return [n * m for n, m in zip(_mu_S1, _sigma_S1)]
+
+        def icdf(self, p):
+            """ See :meth:`LogPrior.icdf()`. """
+            return self._mu_prior.icdf(p) * self._sigma_prior.icdf(p)
+
+        def mean(self):
+            """ See :meth:`LogPrior.mean()`. """
+            return self._mu_mean, self._sigma_mean
+
+        def n_parameters(self):
+            """ See :meth:`LogPrior.n_parameters()`. """
+            return 2
+
+        def sample(self, n=1):
+            """ See :meth:`LogPrior.sample()`. """
+            return np.random.normal(self._mu_mean, self._mu_sd, size=(n, 1)), \
+                   np.random.normal(self._sigma_mean, self._sigma_sd, size=(n, 1))
+
+
 class InverseGammaLogPrior(pints.LogPrior):
     r"""
     Defines an inverse gamma (log) prior with given shape parameter ``a`` and
