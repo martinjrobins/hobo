@@ -196,6 +196,7 @@ from ._diagnostics import (
 #  MCMC
 #
 from ._mcmc import (
+    sample_initial_points,
     mcmc_sample,
     MCMCController,
     MCMCSampler,
