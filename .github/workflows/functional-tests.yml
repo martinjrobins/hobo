@@ -1,0 +1,58 @@
+name: Functional testing
+
+on:
+  push:
+    branches:
+      - issue-1294-functional-testing-module
+
+jobs:
+
+  run-functional-testing:
+    name: Functional testing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out PINTS repository
+        uses: actions/checkout@v2
+        with:
+          path: 'pints'
+
+      - name: Check out functional-testing-2 repository
+        uses: actions/checkout@v2
+        with:
+          repository: 'pints-team/functional-testing-2'
+          ref: 'new-infra'
+          path: 'functional-testing-2'
+          token: ${{ secrets.FUNCTIONAL_TESTING_TOKEN }}
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.8
+          architecture: x64
+
+      - name: install pints
+        run: |
+          python --version
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install .
+        working-directory: 'pints'
+
+      - name: install functional-testing-2
+        run: |
+          python -m pip install .
+        working-directory: 'functional-testing-2'
+
+      - name: run functional testing
+        run: |
+          python run_all_the_things.py
+        working-directory: 'functional-testing-2'
+
+      - name: commit changes
+        run: |
+          git config user.name "github-workflow"
+          git config user.email "github-workflow"
+          git add --all
+          git commit -m "Run of functional testing" || echo "No changes to commit"
+          git push
+        working-directory: 'functional-testing-2'

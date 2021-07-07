@@ -2,6 +2,7 @@
 source = pints
 omit = 
     pints/tests/*
+    pints/functionaltests/*
 
 [report]
 exclude_lines =
