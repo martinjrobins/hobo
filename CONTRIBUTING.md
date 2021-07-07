@@ -213,41 +213,41 @@ Using [Sphinx](http://www.sphinx-doc.org/en/stable/) the documentation in `docs`
 
 3. If the class is a subclass of some other PINTS type, it may be good to
    mention this here. For example:
-   
+
         Extends :class:`SingleChainMCMC`.
 
 4. Simple arguments can be described textually. For example, a docstring could
    be a single line "Sets the width parameter to `w`.". For complicated
    functions or methods it may be good to include a parameters section:
-   
+
         Parameters
         ----------
         x : int
             A variable `x` that should be an integer
         y
             A variable without a type hint
-            
+
    This syntax can also be used for constructor arguments.
    Note that default values for any arguments are already displayed
    automatically in the function/method/constructor signature.
-   
+
 5. Simple return types can be described textually, but complicated return types
    (which are not encouraged) can use the syntax:
-   
+
         Returns
         -------
         samples
             A list of samples.
         likelihoods
             A list of their corresponding log-likelihoods
-            
+
 6. References to literature are highly encouraged, and go near the bottom of
    the docstring:
-   
+
         Adaptive covariance MCMC based on Haario et al. [1]_, [2]_.
-        
+
         (rest of the docstring goes here)
-   
+
         References
         ----------
         .. [1] Johnstone, Chang, Bardenet, de Boer, Gavaghan, Pathmanathan,
@@ -256,14 +256,14 @@ Using [Sphinx](http://www.sphinx-doc.org/en/stable/) the documentation in `docs`
                Journal of Molecular and Cellular Cardiology.
                https://10.1016/j.yjmcc.2015.11.018
 
-        .. [2] Haario, Saksman, Tamminen (2001) "An adaptive Metropolis 
+        .. [2] Haario, Saksman, Tamminen (2001) "An adaptive Metropolis
                algorithm". Bernoulli.
                https://doi.org/10.2307/3318737
 
    There is no standard format (e.g. APA style), but authors, titles, years,
    and journals are recommended, as well as a link based on a
    [DOI](https://www.doi.org/).
-   
+
 7. Longer code snippets can go at the very end of a docstring
 
         Examples
@@ -274,7 +274,7 @@ Using [Sphinx](http://www.sphinx-doc.org/en/stable/) the documentation in `docs`
                 pints.MeanSquaredError(problem1),
                 pints.MeanSquaredError(problem2),
             ]
-            
+
             # Equally weighted
             e1 = pints.SumOfErrors(errors)
 
@@ -292,7 +292,7 @@ Longer code snippets can be started using this form:
 
     """
     An example follows here::
-    
+
         print('Hello world')
 
     """        
@@ -302,14 +302,14 @@ Longer code snippets can be started using this form:
 LaTeX expressions can be embedded in docstrings by using the syntax ```:math:`expression```` for inline mathematics, or a longer form for multi-line strings:
 
     r"""
-        Defines a :math:`\gamma` (log) prior with given shape parameter ``a`` 
+        Defines a :math:`\gamma` (log) prior with given shape parameter ``a``
         and rate parameter ``b``, with pdf
 
         .. math::
             f(x|a,b)=\frac{b^a x^{a-1} e^{-bx}}{\mathrm{\Gamma}(a)}
-    
+
     """
-    
+
 Note that when using maths, it is best to define the docstring in a *raw string*, i.e. by writing ```r""" your stuff here """```. This will allow you to write e.g. `1 + \tau` instead of `1 + \\tau` and will stop flake8 from complaining about invalid escape sequences. See https://github.com/pints-team/pints/issues/735.
 
 ### Building the documentation
@@ -411,6 +411,18 @@ Unit tests and flake8 testing is done for every commit. A nightly cronjob also t
 ### Codecov
 
 Code coverage (how much of our code is actually seen by the (linux) unit tests) is tested using [Codecov](https://docs.codecov.io/), a report is visible on https://codecov.io/gh/pints-team/pints.
+
+It is possible to measure code coverage locally using [coverage.py](https://coverage.readthedocs.io/en/coverage-5.5/). To run a particular test file (below `test_mcmc_adaptive.py`) and record coverage, run:
+
+```
+coverage run -m unittest test_mcmc_adaptive.py
+```
+
+To see the coverage for a particular file (below `_adaptive_covariance.py`) triggered by this test, run:
+
+```
+coverage report -m _adaptive_covariance.py
+```
 
 Configuration files:
 
