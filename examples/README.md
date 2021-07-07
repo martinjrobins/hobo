@@ -42,6 +42,9 @@ relevant code.
 ### Local optimisers
 - [Nelder-Mead](./optimisation/nelder-mead.ipynb)
 
+### Quasi-Newton optimisers
+- [L-BFGS](./optimisation/lbfgs.ipynb)
+
 ### Further optimisation
 - [Convenience methods fmin() and curve\_fit()](./optimisation/convenience.ipynb)
 - [Maximum loglikelihood](./optimisation/maximum-likelihood.ipynb)

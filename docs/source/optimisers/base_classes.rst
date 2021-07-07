@@ -8,3 +8,4 @@ Optimiser base classes
 
 .. autoclass:: PopulationBasedOptimiser
 
+.. autoclass:: LineSearchBasedOptimiser
