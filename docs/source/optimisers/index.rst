@@ -20,6 +20,7 @@ or the :class:`OptimisationController` class.
     cmaes_bare
     cmaes
     gradient_descent
+    hager_zhang_line_search
     nelder_mead
     pso
     snes

@@ -176,6 +176,7 @@ from ._optimisers import (
 from ._optimisers._cmaes import CMAES
 from ._optimisers._cmaes_bare import BareCMAES
 from ._optimisers._gradient_descent import GradientDescent
+from ._optimisers._hager_zhang_line_search import HagerZhang
 from ._optimisers._nelder_mead import NelderMead
 from ._optimisers._pso import PSO
 from ._optimisers._snes import SNES
