@@ -236,6 +236,22 @@ class CauchyLogLikelihood(pints.ProblemLogLikelihood):
             - np.sum(np.log(1 + (error / sigma)**2), axis=0)
         )
 
+    def evaluate_pointwise_loglikelihoods(self, x):
+        """
+        See :meth:`ProblemLogLikelihood.evaluate_pointwise_loglikelihoods()`.
+        """
+        m = self._no
+
+        # problem parameters
+        problem_parameters = x[:-m]
+        error = self._values - self._problem.evaluate(problem_parameters)
+
+        # Distribution parameters
+        sigma = np.asarray(x[-m:])
+
+        # Calculate
+        return - np.log(np.pi) - np.log(sigma) - np.log(1 + (error / sigma)**2)
+
 
 class ConstantAndMultiplicativeGaussianLogLikelihood(
         pints.ProblemLogLikelihood):
@@ -351,6 +367,27 @@ class ConstantAndMultiplicativeGaussianLogLikelihood(
             + 0.5 * np.sum(error**2 / sigma_tot**2, axis=0))
 
         return log_likelihood
+
+    def evaluate_pointwise_loglikelihoods(self, x):
+        """
+        See :meth:`ProblemLogLikelihood.evaluate_pointwise_loglikelihoods()`.
+        """
+        noise_parameters = np.asarray(x[-self._np:])
+        sigma_base = noise_parameters[:self._no]
+        eta = noise_parameters[self._no:2 * self._no]
+        sigma_rel = noise_parameters[2 * self._no:]
+
+        # Evaluate function and compute intermediate values
+        function_values = self._problem.evaluate(x[:-self._np])
+        error = self._values - function_values
+        sigma_tot = sigma_base + sigma_rel * function_values**eta
+
+        # Compute the pointwise log-likelihoods for each observation
+        pointwise = (- 0.5 * np.log(2 * np.pi)
+                     - np.log(sigma_tot)
+                     - 0.5 * error**2 / sigma_tot**2)
+
+        return pointwise
 
     def evaluateS1(self, parameters):
         r"""
@@ -642,8 +679,8 @@ class GaussianKnownSigmaLogLikelihood(pints.ProblemLogLikelihood):
             raise ValueError('Standard deviation must be greater than zero.')
 
         # Pre-calculate parts
-        self._offset = -0.5 * self._nt * np.log(2 * np.pi)
-        self._offset -= self._nt * np.log(sigma)
+        self._offset_no_sum = -0.5 * np.log(2 * np.pi) - np.log(sigma)
+        self._offset = self._offset_no_sum * self._nt
         self._multip = -1 / (2.0 * sigma**2)
 
         # Pre-calculate S1 parts
@@ -652,6 +689,13 @@ class GaussianKnownSigmaLogLikelihood(pints.ProblemLogLikelihood):
     def __call__(self, x):
         error = self._values - self._problem.evaluate(x)
         return np.sum(self._offset + self._multip * np.sum(error**2, axis=0))
+
+    def evaluate_pointwise_loglikelihoods(self, x):
+        """
+        See :meth:`ProblemLogLikelihood.evaluate_pointwise_loglikelihoods()`.
+        """
+        error = self._values - self._problem.evaluate(x)
+        return self._offset_no_sum + self._multip * error**2
 
     def evaluateS1(self, x):
         """ See :meth:`LogPDF.evaluateS1()`. """
@@ -738,6 +782,22 @@ class GaussianLogLikelihood(pints.ProblemLogLikelihood):
         error = self._values - self._problem.evaluate(x[:-self._no])
         return np.sum(- self._logn - self._nt * np.log(sigma)
                       - np.sum(error**2, axis=0) / (2 * sigma**2))
+
+    def evaluate_pointwise_loglikelihoods(self, x):
+        """
+        See :meth:`ProblemLogLikelihood.evaluate_pointwise_loglikelihoods()`.
+        """
+        sigma = np.asarray(x[-self._no:])
+
+        # Compute intermediate values
+        error = self._values - self._problem.evaluate(x[:-self._no])
+
+        # Compute the pointwise log-likelihoods for each observation
+        pointwise = (-0.5 * np.log(2 * np.pi)
+                     - np.log(sigma)
+                     - error**2 / (2 * sigma**2))
+
+        return pointwise
 
     def evaluateS1(self, x):
         """ See :meth:`LogPDF.evaluateS1()`. """
@@ -874,6 +934,25 @@ class MultiplicativeGaussianLogLikelihood(pints.ProblemLogLikelihood):
 
         return log_likelihood
 
+    def evaluate_pointwise_loglikelihoods(self, x):
+        """
+        See :meth:`ProblemLogLikelihood.evaluate_pointwise_loglikelihoods()`.
+        """
+        noise_parameters = np.asarray(x[-self._np:])
+        eta = np.asarray(noise_parameters[0::2])
+        sigma = np.asarray(noise_parameters[1::2])
+
+        # Compute intermediate values
+        function_values = self._problem.evaluate(x[:-self._np])
+        error = self._values - function_values
+        sigma_tot = function_values**eta * sigma
+
+        # Compute the pointwise log-likelihoods for each observation
+        pointwise = (-0.5 * np.log(2 * np.pi)
+                     - np.log(sigma_tot)
+                     - error**2 / (2 * sigma_tot**2))
+        return pointwise
+
 
 class ScaledLogLikelihood(pints.ProblemLogLikelihood):
     """
@@ -987,6 +1066,27 @@ class StudentTLogLikelihood(pints.ProblemLogLikelihood):
             - n * np.log(scipy.special.beta(0.5 * nu, 0.5))
             - 0.5 * (1 + nu) * np.sum(np.log(nu + (error / sigma)**2), axis=0)
         )
+
+    def evaluate_pointwise_loglikelihoods(self, x):
+        """
+        See :meth:`ProblemLogLikelihood.evaluate_pointwise_loglikelihoods()`.
+        """
+        m = 2 * self._no
+
+        # problem parameters
+        problem_parameters = x[:-m]
+        error = self._values - self._problem.evaluate(problem_parameters)
+
+        # Distribution parameters
+        parameters = x[-m:]
+        nu = np.asarray(parameters[0::2])
+        sigma = np.asarray(parameters[1::2])
+
+        # Calculate
+        return (0.5 * nu * np.log(nu)
+                - np.log(sigma)
+                - np.log(scipy.special.beta(0.5 * nu, 0.5))
+                - 0.5 * (1 + nu) * np.log(nu + (error / sigma)**2))
 
 
 class UnknownNoiseLogLikelihood(GaussianLogLikelihood):

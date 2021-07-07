@@ -336,6 +336,18 @@ class ProblemLogLikelihood(LogPDF):
         """ See :meth:`LogPDF.n_parameters()`. """
         return self._n_parameters
 
+    def evaluate_pointwise_loglikelihoods(self, x):
+        """
+        Evaluates the Log-likelihood at each observation for the given
+        parameters, x. Returns a numpy array of length no. timepoints if no.
+        outputs = 1. Otherwise returns a 2d array of size no. timepoints by no.
+        outputs.
+
+        *This is an optional method that is not always implemented.*
+        """
+
+        raise NotImplementedError
+
 
 class LogPosterior(LogPDF):
     """
