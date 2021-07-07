@@ -235,6 +235,16 @@ else:   # pragma: no python 3 cover
 
 
 #
+# ABC
+#
+from ._abc import (
+    ABCSampler,
+    ABCController
+)
+from ._abc._abc_rejection import RejectionABC
+
+
+#
 # Nested samplers
 #
 from ._nested import NestedSampler

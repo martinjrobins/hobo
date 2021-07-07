@@ -4,7 +4,8 @@ Nested samplers
 
 .. toctree::
 
-    nested_sampler
+    running
+    base_classes
     nested_ellipsoid_sampler
     nested_rejection_sampler
 
