@@ -8,7 +8,8 @@
 #
 import unittest
 import numpy as np
-
+from scipy.integrate import cumtrapz, quad
+from scipy.interpolate import interp1d
 import pints
 import pints.toy
 
@@ -101,7 +102,7 @@ class TestRelativisticMCMC(unittest.TestCase):
             ValueError, mcmc.tell, (float('-inf'), np.array([1, 1])))
 
     def test_kinetic_energy(self):
-        # Tests kinetic energy values and derivatives
+        # Tests kinetic energy values
 
         x0 = np.array([2, 2])
         model = pints.RelativisticMCMC(x0)
@@ -109,17 +110,19 @@ class TestRelativisticMCMC(unittest.TestCase):
 
         # kinetic energy
         mc2 = 100.0
+        m2c2 = 100.0
         momentum = [1.0, 2.0]
         squared = np.sum(np.array(momentum)**2)
-        ke1 = mc2 * (squared / mc2 + 1.0)**0.5
+        ke1 = mc2 * (squared / m2c2 + 1.0)**0.5
         ke2 = model._kinetic_energy(momentum)
         self.assertEqual(ke1, ke2)
 
         c = 1.0
         m = 1.0
         mc2 = m * c**2
+        m2c2 = m**2 * c**2
         squared = np.sum(np.array(momentum)**2)
-        ke1 = mc2 * (squared / mc2 + 1.0)**0.5
+        ke1 = mc2 * (squared / m2c2 + 1.0)**0.5
         model = pints.RelativisticMCMC(x0)
         model.set_speed_of_light(c)
         model.ask()
@@ -188,6 +191,89 @@ class TestRelativisticMCMC(unittest.TestCase):
         threshold2 = 10
         mcmc.set_hamiltonian_threshold(threshold2)
         self.assertEqual(mcmc.hamiltonian_threshold(), threshold2)
+
+    def test_momentum_logpdf(self):
+        # Test log pdf of momentum magnitude
+
+        x0 = np.array([2, 2, 2, 2, 2])
+        model = pints.RelativisticMCMC(x0)
+        m = 1.6
+        c = 3.4
+        n = len(x0)
+        model.set_mass(m)
+        model.set_speed_of_light(c)
+        model.ask()
+
+        mag = 1.7
+        f1 = model._momentum_logpdf(mag)
+        f2 = np.exp(-m * c**2 * np.sqrt(mag ** 2 / (m**2 * c**2) + 1)) \
+            * mag ** (n - 1)
+
+        self.assertAlmostEqual(f1, np.log(f2))
+
+    def test_calculate_momentum_distribution(self):
+        # Test calculation of inv cdf of momentum magnitude
+        x0 = np.array([2, 2, 2, 2, 2])
+        model = pints.RelativisticMCMC(x0)
+
+        # Choose values of m and c for which the distribution is known to be
+        # calculable without using logarithms
+        m = 1.6
+        c = 3.4
+        model.set_mass(m)
+        model.set_speed_of_light(c)
+        model.ask()
+
+        # Integrate the pdf to get normalizing constant
+        def pdf(u):
+            return np.exp(model._momentum_logpdf(u))
+
+        c = quad(pdf, 0, 100)[0]
+
+        # Integrate to get cumulative distribution function
+        integration_grid = np.arange(1e-6, 10, 1e-5)
+        cdf = cumtrapz(1 / c * pdf(integration_grid), x=integration_grid)
+
+        # Interpolate to get approximate inverse
+        inv_cdf = interp1d([0.0] + list(cdf), integration_grid)
+
+        # Compare outputs of inverse CDF at selected points
+        model_inv_cdf = model._inv_cdf
+        test_points = [0.0, 0.1, 0.5, 0.75, 0.9]
+
+        for test_point in test_points:
+            self.assertAlmostEqual(
+                inv_cdf(test_point), model_inv_cdf(test_point), places=5)
+
+    def test_sample_momentum(self):
+        # Test sampler of momentum
+        x0 = np.array([2, 2, 2, 2, 2])
+        model = pints.RelativisticMCMC(x0)
+        model.ask()
+        p = model._sample_momentum()
+        self.assertEqual(len(p), len(x0))
+
+        # Test sampler with a small value of m, triggering a refinement of the
+        # integration grid
+        m = 0.01
+        c = 10.0
+        model = pints.RelativisticMCMC(x0)
+        model.set_mass(m)
+        model.set_speed_of_light(c)
+        model.ask()
+        p = model._sample_momentum()
+        self.assertEqual(len(p), len(x0))
+
+        # Test sampler with unpleasant values of m and c that will trigger the
+        # sampler warning
+        m = 1e-10
+        c = 1e-10
+        model = pints.RelativisticMCMC(x0)
+        model.set_mass(m)
+        model.set_speed_of_light(c)
+        model.ask()
+        p = model._sample_momentum()
+        self.assertEqual(len(p), len(x0))
 
 
 if __name__ == '__main__':

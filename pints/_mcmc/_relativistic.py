@@ -7,8 +7,10 @@
 #
 from __future__ import absolute_import, division
 from __future__ import print_function, unicode_literals
+import warnings
 import pints
 import numpy as np
+from scipy.interpolate import interp1d
 
 
 class RelativisticMCMC(pints.SingleChainMCMC):
@@ -31,7 +33,7 @@ class RelativisticMCMC(pints.SingleChainMCMC):
     .. math::
         H(q,p) &=       U(q)       +        KE(p)\\
                &= -\text{log}(p(q|X)p(q)) +
-                    mc^2 (\Sigma_{i=1}^{d} p_i^2 / (mc^2) + 1)^{0.5}
+                    mc^2 (\Sigma_{i=1}^{d} p_i^2 / (m^2 c^2) + 1)^{0.5}
 
     where ``d`` is the dimensionality of model, ``m`` is the scalar 'mass'
     given to each particle (chosen to be 1 as default) and ``c`` is the
@@ -51,7 +53,7 @@ class RelativisticMCMC(pints.SingleChainMCMC):
     where relativistic mass (a scalar) is,
 
     .. math::
-        M(p) = m (\Sigma_{i=1}^{d} p_i^2 / (mc^2) + 1)^{0.5}
+        M(p) = m (\Sigma_{i=1}^{d} p_i^2 / (m^2 c^2) + 1)^{0.5}
 
     In particular, the algorithm we implement follows eqs. in section 2.1 of
     [1]_.
@@ -115,6 +117,8 @@ class RelativisticMCMC(pints.SingleChainMCMC):
         if not self._running:
             self._running = True
             self._mc2 = self._mass * self._c**2
+            self._m2c2 = self._mass**2 * self._c**2
+            self._calculate_momentum_distribution()
 
         # Notes:
         #  Ask is responsible for updating the position, which is the point
@@ -135,9 +139,8 @@ class RelativisticMCMC(pints.SingleChainMCMC):
         # First iteration of a run of leapfrog iterations
         if self._frog_iteration == 0:
 
-            # Sample random momentum for current point using identity cov
-            self._current_momentum = np.random.multivariate_normal(
-                np.zeros(self._n_parameters), np.eye(self._n_parameters))
+            # Sample random momentum for current point
+            self._current_momentum = self._sample_momentum()
 
             # First leapfrog position is the current sample in the chain
             self._position = np.array(self._current, copy=True)
@@ -149,7 +152,7 @@ class RelativisticMCMC(pints.SingleChainMCMC):
 
         # Perform a leapfrog step for the position
         squared = np.sum(np.array(self._momentum)**2)
-        relativistic_mass = self._mass * np.sqrt(squared / self._mc2 + 1)
+        relativistic_mass = self._mass * np.sqrt(squared / self._m2c2 + 1)
         self._position += (
             self._scaled_epsilon * self._momentum / relativistic_mass)
 
@@ -157,6 +160,73 @@ class RelativisticMCMC(pints.SingleChainMCMC):
         # Using this, the leapfrog step for the momentum is performed in tell()
         self._ready_for_tell = True
         return np.array(self._position, copy=True)
+
+    def _calculate_momentum_distribution(self):
+        """Calculate an approximation to the CDF of momentum magnitude.
+
+        The purpose of this method is to calculate self._inv_cdf, a function
+        giving a numerical approximation to the inverse cumulative distribution
+        function of the magnitude of the momentum vector. This function can be
+        used to perform inverse transform sampling to generate samples of the
+        momentum.
+
+        This method should be called before any sampling is performed. As
+        implemented, it is called upon the first call to self.ask.
+
+        Numerical integration of the momentum density is performed using the
+        trapezoidal rule.
+        """
+        num_adaptations = 0
+
+        # Set initial values for the integration grid
+        # The grid goes from 0 to a rough initial guess, which must be at least
+        # 10 and not more than 100
+        max_value = self._mass + self._n_parameters
+        max_value = max(10, max_value)
+        max_value = min(100, max_value)
+        spacing = 1e-4
+
+        integration_accepted = False
+
+        while not integration_accepted:
+            # Evaluate the logpdf on a grid
+            integration_grid = np.arange(1e-6, max_value, spacing)
+            logpdf_values = self._momentum_logpdf(integration_grid)
+
+            # Integrate using the trapezoidal rule
+            # Note that the step size (and any other constants) can be ignored
+            # here, as the CDF will be normalized after this calculation
+            cdf = np.logaddexp.accumulate(
+                np.logaddexp(logpdf_values[1:], logpdf_values[:-1]))
+
+            # Normalize the CDF
+            cdf = np.exp(cdf - cdf[-1])
+
+            # Adapt the integration grid if the result is inaccurate
+            if max(np.diff(cdf)) > 1e-4:
+                # cdf is changing too much, so a finer grid is required
+                spacing /= 2
+                num_adaptations += 1
+
+            elif cdf[-1] - cdf[-2] > 1e-8:
+                # cdf is still increasing at the end
+                max_value *= 2
+                num_adaptations += 1
+
+            else:
+                integration_accepted = True
+
+            if num_adaptations > 10:
+                warnings.warn('Failed to approximate momentum distribution '
+                              'for given mass and speed of light. Samples of '
+                              'momentum may be inaccurate.')
+                integration_accepted = True
+
+        # Do a reverse interpolation to approximate inverse cdf
+        inv_cdf = interp1d([0.0] + list(cdf), integration_grid)
+
+        # Save the inverse cdf so that it can be used for sampling
+        self._inv_cdf = inv_cdf
 
     def divergent_iterations(self):
         """
@@ -202,11 +272,42 @@ class RelativisticMCMC(pints.SingleChainMCMC):
         Kinetic energy of relativistic particle, which is defined in [1]_.
         """
         squared = np.sum(np.array(momentum)**2)
-        return self._mc2 * (squared / self._mc2 + 1)**0.5
+        return self._mc2 * (squared / self._m2c2 + 1)**0.5
 
     def mass(self):
         """ Returns ``mass`` which is the rest mass of particle. """
         return self._mass
+
+    def _momentum_logpdf(self, u):
+        r"""Evalute the unnormalized logpdf of the magnitude of momentum.
+
+        The probability density of the momentum vector :math:`p` is stated in
+        [1]_ as :math:`f(p) \propto e^{-K(p)}`, where
+
+        .. math::
+            K(p) = m c^2 \left( \frac{p^T p}{m^2 c^2} + 1 \right)^{1/2}
+
+        Note that this is the distribution for the vector
+        :math:`p = (p_1, p_2, \dots, p_n)`, where n is the dimension of the
+        parameter space. However, this distribution has no dependence on the
+        direction of the vector p. Thus, the distribution for the magnitude
+        (:math:`||p||`) of the momentum vector can be obtained directly, but we
+        must include the Jacobian term for the transformation to hyperspherical
+        coordinates, such that
+
+        .. math::
+            f(||p||) \propto e^{-K(p)} ||p||^{n-1}
+
+        The logarithm of this unnormalized density is returned by this method.
+
+        Parameters
+        ----------
+        u : float
+            Where to evaluate the unnormalized log pdf of the magnitude of
+            momentum.
+        """
+        return -self._mc2 * np.sqrt(u ** 2 / self._m2c2 + 1) \
+            + np.log(u ** (self._n_parameters - 1))
 
     def n_hyper_parameters(self):
         """ See :meth:`TunableMethod.n_hyper_parameters()`. """
@@ -219,6 +320,25 @@ class RelativisticMCMC(pints.SingleChainMCMC):
     def needs_sensitivities(self):
         """ See :meth:`pints.MCMCSampler.needs_sensitivities()`. """
         return True
+
+    def _sample_momentum(self):
+        """Draw a sample of the momentum vector.
+
+        This method first samples a random direction for the momentum. Then, it
+        samples the magnitude of momentum using inverse transform sampling. It
+        assumes that the inverse cumulative distribution function for the
+        magnitude of momentum has already been calculated by the
+        :meth:`_calculate_momentum_distribution` method.
+        """
+        # Sample a direction for the momentum vector, which is uniform
+        dir = np.random.randn(self._n_parameters)
+        dir /= np.linalg.norm(dir)
+
+        # Sample a magnitude for the momentum vector
+        u = np.random.random()
+        p = self._inv_cdf(u)
+
+        return p * dir
 
     def scaled_epsilon(self):
         """
