@@ -47,7 +47,7 @@ class MALAMCMC(pints.SingleChainMCMC):
     after a step,
 
     .. math::
-        \alpha = \frac{\pi(\theta^*)q(\theta_t|\theta^*)}{\pi(\theta^*)
+        \alpha = \frac{\pi(\theta^*)q(\theta_t|\theta^*)}{\pi(\theta_t)
             q(\theta^*|\theta_t)}
 
     where :math:`q(\theta_2|\theta_1) =
